@@ -2,61 +2,141 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
+
   pull_request:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
+
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
+    timeout-minutes: 30
 
     steps:
+
+      # 1. تحميل المشروع
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. إعداد Java 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: gradle
 
-      - name: Setup Android SDK Environment
+      # 3. إعداد Android SDK
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # 4. تثبيت Android SDK / NDK / CMake المطلوبة
+      - name: Install Android SDK components
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1" "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
+          yes | sdkmanager --licenses || true
 
-      - name: Grant Execute Permission to Gradlew
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;26.1.10909125" \
+            "cmake;3.22.1"
+
+      # 5. التأكد من وجود مشروع Android
+      - name: Verify Android project
+        run: |
+          test -f android/gradlew
+          test -f android/settings.gradle.kts
+          test -f android/build.gradle.kts
+          test -f android/app/build.gradle.kts
+          test -f android/gradle/wrapper/gradle-wrapper.jar
+          test -f android/gradle/wrapper/gradle-wrapper.properties
+
+          echo "Android project structure:"
+          ls -la android
+
+      # 6. إعطاء Gradle صلاحية التنفيذ
+      - name: Grant Gradle execute permission
         run: |
           chmod +x android/gradlew
 
-      - name: Build Android APK (Debug & Release)
-        working-directory: android
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+      # 7. عرض إصدارات البيئة للتشخيص
+      - name: Show build environment
+        working-directory: ./android
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
-          ./gradlew assembleRelease --no-daemon --stacktrace || true
+          java -version
+          ./gradlew --version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-      - name: Upload APK Artifacts
+      # 8. تنظيف المشروع
+      - name: Clean Android project
+        working-directory: ./android
+        run: |
+          ./gradlew clean --no-daemon --stacktrace
+
+      # 9. بناء Debug APK
+      - name: Build Debug APK
+        working-directory: ./android
+        run: |
+          ./gradlew :app:assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --info
+
+      # 10. التأكد من إنشاء Debug APK
+      - name: Verify Debug APK
+        run: |
+          echo "Generated APK files:"
+          find android/app/build/outputs/apk -type f -name "*.apk" -print
+
+          test -n "$(find android/app/build/outputs/apk -type f -name "*.apk" -print -quit)"
+
+      # 11. بناء Release APK
+      - name: Build Release APK
+        working-directory: ./android
+        run: |
+          ./gradlew :app:assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            --info
+
+      # 12. التأكد من إنشاء Release APK
+      - name: Verify Release APK
+        run: |
+          echo "Release APK files:"
+          find android/app/build/outputs/apk -type f -name "*release*.apk" -print
+
+          test -n "$(find android/app/build/outputs/apk -type f -name "*release*.apk" -print -quit)"
+
+      # 13. رفع APK إلى Artifacts
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: AlMahalla-APK
-          path: android/app/build/outputs/apk/**/*.apk
+          name: AlMahalla-APK-${{ github.run_number }}
+          path: |
+            android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
           retention-days: 14
 
+      # 14. إنشاء GitHub Release فقط عند التشغيل اليدوي
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
-        continue-on-error: true
         with:
           tag_name: "v1.1.0-build${{ github.run_number }}"
-          name: "Al-Mahalla APK v1.1.0 (Build ${{ github.run_number }})"
-          files: android/app/build/outputs/apk/**/*.apk
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "المحلة APK v1.1.0 - Build ${{ github.run_number }}"
+          generate_release_notes: true
+          files: |
+            android/app/build/outputs/apk/**/*.apk
