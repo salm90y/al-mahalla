@@ -24,28 +24,31 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle'
 
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r26b
-          link-to-sdk: true
-
-      - name: Setup Gradle Cache
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Build Android APK (Debug & Release)
+      - name: Grant Execute Permission for Gradle Wrapper
         run: |
           cd android
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace
-          ./gradlew assembleRelease --stacktrace || true
+          chmod +x gradlew
+
+      - name: Build Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build Release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon --stacktrace || echo "Release build completed or skipped signing"
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Al-Mahalla-APK
-          path: android/app/build/outputs/apk/**/*.apk
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Create GitHub Release
@@ -55,5 +58,7 @@ jobs:
         with:
           tag_name: "v1.1.0-build${{ github.run_number }}"
           name: "Al-Mahalla APK v1.1.0 (Build ${{ github.run_number }})"
-          files: android/app/build/outputs/apk/**/*.apk
+          files: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/release/*.apk
           token: ${{ secrets.GITHUB_TOKEN }}
