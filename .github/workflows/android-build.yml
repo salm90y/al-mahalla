@@ -25,31 +25,30 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK and NDK
+      - name: Setup Android SDK Environment
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "ndk;26.1.10909125" "cmake;3.22.1" || true
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1" "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
 
       - name: Grant Execute Permission to Gradlew
         run: |
-          chmod +x ./android/gradlew
+          chmod +x android/gradlew
 
-      - name: Build Debug APK
-        working-directory: ./android
+      - name: Build Android APK (Debug & Release)
+        working-directory: android
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
         run: |
           ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace || true
 
-      - name: Build Release APK
-        working-directory: ./android
-        run: |
-          ./gradlew assembleRelease --no-daemon --stacktrace || echo "Release build completed"
-
-      - name: Upload APKs to Artifacts
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: AlMahalla-APK
-          path: |
-            android/app/build/outputs/apk/**/*.apk
+          path: android/app/build/outputs/apk/**/*.apk
           retention-days: 14
 
       - name: Create GitHub Release
@@ -59,9 +58,5 @@ jobs:
         with:
           tag_name: "v1.1.0-build${{ github.run_number }}"
           name: "Al-Mahalla APK v1.1.0 (Build ${{ github.run_number }})"
-          files: |
-            android/app/build/outputs/apk/**/*.apk
+          files: android/app/build/outputs/apk/**/*.apk
           token: ${{ secrets.GITHUB_TOKEN }}
-
-
-
