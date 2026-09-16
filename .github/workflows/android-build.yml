@@ -11,29 +11,27 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: write
-      
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK & NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK 26.1.10909125 & CMake
+      - name: Accept Android SDK Licenses & Setup NDK
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
+          export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1" || true
 
-      - name: Grant Execute Permission for Gradle Wrapper
+      - name: Grant Execute Permission for Gradlew
         run: |
           chmod +x ./android/gradlew
 
@@ -45,14 +43,13 @@ jobs:
       - name: Build Android Release APK
         working-directory: ./android
         run: |
-          ./gradlew assembleRelease --no-daemon --stacktrace || echo "Assemble release finished"
+          ./gradlew assembleRelease --no-daemon --stacktrace || echo "Release build finished"
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AlMahalla-Debug-APK
           path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
           retention-days: 14
 
       - name: Upload Release APK Artifact
@@ -60,18 +57,7 @@ jobs:
         with:
           name: AlMahalla-Release-APK
           path: android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 14
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2
-        continue-on-error: true
-        with:
-          tag_name: "v1.1.0-build${{ github.run_number }}"
-          name: "Al-Mahalla APK v1.1.0 (Build ${{ github.run_number }})"
-          files: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/release/*.apk
-          token: ${{ secrets.GITHUB_TOKEN }}
 
